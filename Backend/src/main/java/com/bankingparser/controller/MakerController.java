@@ -78,6 +78,41 @@ public class MakerController {
         return ResponseEntity.ok(savedPattern);
     }
 
+    /**
+     * Update an existing pattern (e.g., failed message with new regex)
+     * Endpoint: PUT /maker/updatePattern/{patternId}
+     * Used to update failed messages with a regex pattern
+     */
+    @PutMapping("/updatePattern/{patternId}")
+    public ResponseEntity<?> updatePattern(
+            @PathVariable Integer patternId,
+            @RequestBody Pattern updatedPattern) {
+        try {
+            Pattern existingPattern = patternService.getPatternById(patternId)
+                    .orElseThrow(() -> new RuntimeException("Pattern not found"));
+
+            // Update the regex pattern
+            if (updatedPattern.getRegexPattern() != null) {
+                existingPattern.setRegexPattern(updatedPattern.getRegexPattern());
+            }
+
+            // Update the sample message if provided
+            if (updatedPattern.getSampleEx() != null) {
+                existingPattern.setSampleEx(updatedPattern.getSampleEx());
+            }
+
+            // Update the status
+            if (updatedPattern.getStatus() != null) {
+                existingPattern.setStatus(updatedPattern.getStatus());
+            }
+
+            Pattern savedPattern = patternService.savePattern(existingPattern);
+            return ResponseEntity.ok(savedPattern);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body("Error updating pattern: " + e.getMessage());
+        }
+    }
+
 
 
     // ============ DIRECT REGEX MATCHING (No Database) ============
