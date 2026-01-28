@@ -1,95 +1,130 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParserStore, defaultExtractedData } from '@/stores/parserStore';
-import { useRegexStore } from '@/stores/regexStore';
-import { useAuthStore } from '@/stores/authStore';
+import { useCheckerStore } from '@/stores/checkerStore';
 import { Header } from '@/components/Header';
 import { ExtractedDataDisplay } from '@/components/ExtractedDataDisplay';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Check, X } from 'lucide-react';
+import { Check, X, Loader2, Play, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
 /**
  * CheckerDashboard - Regex approval page for CHECKER role
- * Has all Maker features plus approval/rejection capabilities
+ * Flow: Load pending regex → Test it → Approve/Reject
  */
 const CheckerDashboard = () => {
   const [regexPattern, setRegexPattern] = useState('');
   const [testMessage, setTestMessage] = useState('');
   const [extractedData, setExtractedData] = useState(defaultExtractedData);
-  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [loadedTemplate, setLoadedTemplate] = useState(null);
+  const [hasTestedRegex, setHasTestedRegex] = useState(false);
+  const [activeTab, setActiveTab] = useState('approval');
   
   const { parseMessage } = useParserStore();
-  const { saveDraft, approveTemplate, rejectTemplate, getPendingTemplates, templates } = useRegexStore();
-  const { user } = useAuthStore();
+  const { 
+    pendingTemplates,
+    isLoading, 
+    fetchPendingTemplates, 
+    approveTemplate, 
+    rejectTemplate,
+  } = useCheckerStore();
 
-  const pendingTemplates = getPendingTemplates();
+  // Fetch pending templates from backend on mount
+  useEffect(() => {
+    fetchPendingTemplates().catch(err => {
+      console.error('Failed to fetch pending templates:', err);
+      toast.error('Failed to load pending templates');
+    });
+  }, [fetchPendingTemplates]);
 
   const handleTestRegex = () => {
     if (testMessage.trim()) {
       const result = parseMessage(testMessage, regexPattern || undefined);
       setExtractedData(result);
+      setHasTestedRegex(true);
+      toast.success('Regex tested successfully');
     }
   };
 
-  const handleSaveDraft = () => {
-    if (!user) return;
-    
-    saveDraft({
-      pattern: regexPattern,
-      testMessage,
-    }, user.id);
-    
-    toast.success('Draft saved successfully');
+  // Load a pending template into the review area
+  const handleLoadForReview = (template) => {
+    setLoadedTemplate(template);
+    setRegexPattern(template.pattern || '');
+    setTestMessage(template.sampleMessage || '');
+    setExtractedData(defaultExtractedData);
+    setHasTestedRegex(false);
+    setActiveTab('review');
+    toast.info('Template loaded for review. Test the regex before approving.');
   };
 
-  const handleSelectTemplate = (template) => {
-    setSelectedTemplate(template);
-    setRegexPattern(template.pattern);
-    setTestMessage(template.testMessage || '');
+  const handleApprove = async () => {
+    if (!loadedTemplate) return;
     
-    // Auto-test if there's a test message
-    if (template.testMessage) {
-      const result = parseMessage(template.testMessage, template.pattern || undefined);
-      setExtractedData(result);
+    if (!hasTestedRegex) {
+      toast.warning('Please test the regex before approving');
+      return;
+    }
+    
+    try {
+      await approveTemplate(loadedTemplate.id);
+      toast.success('Template approved successfully');
+      // Clear the review area
+      setLoadedTemplate(null);
+      setRegexPattern('');
+      setTestMessage('');
+      setExtractedData(defaultExtractedData);
+      setHasTestedRegex(false);
+      setActiveTab('approval');
+    } catch (err) {
+      console.error('Failed to approve template:', err);
+      toast.error('Failed to approve template');
     }
   };
 
-  const handleApprove = (templateId) => {
-    approveTemplate(templateId);
-    setSelectedTemplate(null);
-    toast.success('Template approved');
+  const handleReject = async () => {
+    if (!loadedTemplate) return;
+    
+    try {
+      await rejectTemplate(loadedTemplate.id);
+      toast.success('Template rejected');
+      // Clear the review area
+      setLoadedTemplate(null);
+      setRegexPattern('');
+      setTestMessage('');
+      setExtractedData(defaultExtractedData);
+      setHasTestedRegex(false);
+      setActiveTab('approval');
+    } catch (err) {
+      console.error('Failed to reject template:', err);
+      toast.error('Failed to reject template');
+    }
   };
 
-  const handleReject = (templateId) => {
-    rejectTemplate(templateId);
-    setSelectedTemplate(null);
-    toast.success('Template rejected');
-  };
-
-  const statusColors = {
-    draft: 'secondary',
-    pending: 'outline',
-    approved: 'default',
-    rejected: 'destructive',
+  const handleCancelReview = () => {
+    setLoadedTemplate(null);
+    setRegexPattern('');
+    setTestMessage('');
+    setExtractedData(defaultExtractedData);
+    setHasTestedRegex(false);
+    setActiveTab('approval');
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main className="container mx-auto px-4 py-6 max-w-5xl">
-        <Tabs defaultValue="approval" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="approval">
               Approval Queue ({pendingTemplates.length})
             </TabsTrigger>
-            <TabsTrigger value="builder">Regex Builder</TabsTrigger>
-            <TabsTrigger value="all">All Templates</TabsTrigger>
+            <TabsTrigger value="review" disabled={!loadedTemplate}>
+              Review & Test {loadedTemplate && '⚡'}
+            </TabsTrigger>
           </TabsList>
 
           {/* Approval Queue Tab */}
@@ -98,11 +133,16 @@ const CheckerDashboard = () => {
               <CardHeader>
                 <CardTitle>Pending Approvals</CardTitle>
                 <CardDescription>
-                  Review and approve/reject submitted regex templates
+                  Select a template to load it for review and testing
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {pendingTemplates.length === 0 ? (
+                {isLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-muted-foreground">Loading pending templates...</span>
+                  </div>
+                ) : pendingTemplates.length === 0 ? (
                   <p className="text-muted-foreground text-center py-8">
                     No pending templates to review
                   </p>
@@ -111,42 +151,34 @@ const CheckerDashboard = () => {
                     {pendingTemplates.map(template => (
                       <div
                         key={template.id}
-                        className={`p-4 border rounded cursor-pointer transition-colors ${
-                          selectedTemplate?.id === template.id ? 'border-primary bg-muted/50' : 'hover:bg-muted/30'
-                        }`}
-                        onClick={() => handleSelectTemplate(template)}
+                        className="p-4 border rounded hover:bg-muted/30 transition-colors"
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex-1">
-                            <p className="font-medium">Regex Pattern</p>
-                            <p className="text-xs text-muted-foreground font-mono mt-1 truncate max-w-md">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <Badge variant="outline">ID: {template.id}</Badge>
+                              <Badge variant="secondary">PENDING</Badge>
+                            </div>
+                            <p className="font-medium text-sm mb-1">Regex Pattern:</p>
+                            <p className="text-xs text-muted-foreground font-mono bg-muted/50 p-2 rounded truncate">
                               {template.pattern || 'No pattern'}
                             </p>
+                            {template.sampleMessage && (
+                              <>
+                                <p className="font-medium text-sm mt-2 mb-1">Sample Message:</p>
+                                <p className="text-xs text-muted-foreground bg-muted/50 p-2 rounded truncate">
+                                  {template.sampleMessage}
+                                </p>
+                              </>
+                            )}
                           </div>
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-green-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleApprove(template.id);
-                              }}
-                            >
-                              <Check className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="text-red-600"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleReject(template.id);
-                              }}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          </div>
+                          <Button
+                            onClick={() => handleLoadForReview(template)}
+                            className="shrink-0"
+                          >
+                            <Eye className="h-4 w-4 mr-1" />
+                            Load for Review
+                          </Button>
                         </div>
                       </div>
                     ))}
@@ -154,110 +186,119 @@ const CheckerDashboard = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
 
-            {/* Preview selected template */}
-            {selectedTemplate && (
-              <div className="space-y-4">
+          {/* Review & Test Tab */}
+          <TabsContent value="review" className="space-y-6">
+            {loadedTemplate ? (
+              <>
+                <Card className="border-primary">
+                  <CardHeader className="bg-primary/5">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle>Reviewing Template #{loadedTemplate.id}</CardTitle>
+                        <CardDescription>
+                          Test the regex pattern before approving or rejecting
+                        </CardDescription>
+                      </div>
+                      <Badge variant={hasTestedRegex ? 'default' : 'secondary'}>
+                        {hasTestedRegex ? '✓ Tested' : 'Not Tested Yet'}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4 pt-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="reviewRegex">Regex Pattern (Read-only)</Label>
+                      <Textarea
+                        id="reviewRegex"
+                        value={regexPattern}
+                        readOnly
+                        className="font-mono text-sm bg-muted/30 min-h-[80px]"
+                      />
+                    </div>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="reviewTestSms">Test Message (SMS)</Label>
+                      <Textarea
+                        id="reviewTestSms"
+                        placeholder="Enter or modify test SMS..."
+                        value={testMessage}
+                        onChange={(e) => {
+                          setTestMessage(e.target.value);
+                          setHasTestedRegex(false);
+                        }}
+                        className="min-h-[100px]"
+                      />
+                    </div>
+                    
+                    <Button 
+                      onClick={handleTestRegex} 
+                      disabled={!testMessage.trim()}
+                      className="w-full"
+                      size="lg"
+                    >
+                      <Play className="h-4 w-4 mr-2" />
+                      Test Regex
+                    </Button>
+                  </CardContent>
+                </Card>
+
+                {/* Extracted Data Display */}
                 <ExtractedDataDisplay data={extractedData} editable={false} />
-                <div className="flex gap-2">
-                  <Button
-                    className="bg-green-600 hover:bg-green-700"
-                    onClick={() => handleApprove(selectedTemplate.id)}
-                  >
-                    <Check className="h-4 w-4 mr-1" />
-                    Approve Regex
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    onClick={() => handleReject(selectedTemplate.id)}
-                  >
-                    <X className="h-4 w-4 mr-1" />
-                    Reject Regex
-                  </Button>
-                </div>
-              </div>
-            )}
-          </TabsContent>
 
-          {/* Regex Builder Tab (same as Maker) */}
-          <TabsContent value="builder" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Regex Builder</CardTitle>
-                <CardDescription>
-                  Create and test regex patterns for SMS parsing
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="regex">Regex Pattern</Label>
-                  <Input
-                    id="regex"
-                    value={regexPattern}
-                    onChange={(e) => setRegexPattern(e.target.value)}
-                    placeholder="Enter regex pattern with named groups..."
-                    className="font-mono text-sm"
-                  />
-                </div>
-                
-                <div className="space-y-2">
-                  <Label htmlFor="testSms">Test Message (SMS)</Label>
-                  <Textarea
-                    id="testSms"
-                    placeholder="Paste test SMS here..."
-                    value={testMessage}
-                    onChange={(e) => setTestMessage(e.target.value)}
-                    className="min-h-[100px]"
-                  />
-                </div>
-                
-                <div className="flex gap-2">
-                  <Button onClick={handleTestRegex} disabled={!testMessage.trim()}>
-                    Test Regex
-                  </Button>
-                  <Button variant="outline" onClick={handleSaveDraft}>
-                    Save as Draft
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <ExtractedDataDisplay data={extractedData} editable={false} />
-          </TabsContent>
-
-          {/* All Templates Tab */}
-          <TabsContent value="all" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>All Templates</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {templates.length === 0 ? (
-                  <p className="text-muted-foreground text-center py-8">
-                    No templates created yet
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {templates.map(template => (
-                      <div
-                        key={template.id}
-                        className="flex items-center justify-between p-3 border rounded"
+                {/* Approval Actions */}
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex gap-3 justify-center">
+                      <Button
+                        size="lg"
+                        className="bg-green-600 hover:bg-green-700 min-w-[150px]"
+                        onClick={handleApprove}
+                        disabled={!hasTestedRegex || isLoading}
                       >
-                        <div className="flex-1">
-                          <p className="font-medium">Regex Pattern</p>
-                          <p className="text-xs text-muted-foreground font-mono truncate max-w-md">
-                            {template.pattern || 'No pattern'}
-                          </p>
-                        </div>
-                        <Badge variant={statusColors[template.status]}>
-                          {template.status}
-                        </Badge>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                        {isLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Check className="h-4 w-4 mr-2" />
+                        )}
+                        Approve
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="destructive"
+                        className="min-w-[150px]"
+                        onClick={handleReject}
+                        disabled={isLoading}
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Reject
+                      </Button>
+                      <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleCancelReview}
+                        disabled={isLoading}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                    {!hasTestedRegex && (
+                      <p className="text-center text-sm text-amber-600 mt-3">
+                        ⚠️ You must test the regex before approving
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <Card>
+                <CardContent className="py-12">
+                  <p className="text-muted-foreground text-center">
+                    No template loaded for review. Go to the Approval Queue and select a template.
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
         </Tabs>
       </main>

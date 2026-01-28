@@ -33,6 +33,16 @@ public class CheckerController {
     }
 
     /**
+     * Get all patterns (all statuses) for the All Templates view
+     * Endpoint: GET /checker/getAllPatterns
+     */
+    @GetMapping("/getAllPatterns")
+    public ResponseEntity<List<Pattern>> getAllPatterns() {
+        List<Pattern> patterns = patternService.getAllPatterns();
+        return ResponseEntity.ok(patterns);
+    }
+
+    /**
      * Approve or reject a pattern
      * Endpoint: POST /checker/postPatternAndSample
      * Body should contain: patternId and action (APPROVED/REJECTED)
