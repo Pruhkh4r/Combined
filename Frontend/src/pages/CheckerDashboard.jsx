@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParserStore, defaultExtractedData } from '@/stores/parserStore';
+import { defaultExtractedData } from '@/stores/parserStore';
 import { useCheckerStore } from '@/stores/checkerStore';
 import { Header } from '@/components/Header';
 import { ExtractedDataDisplay } from '@/components/ExtractedDataDisplay';
@@ -12,6 +12,27 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Check, X, Loader2, Play, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 
+// Helper function to map backend response to frontend data structure
+const mapExtractedData = (backendResponse) => {
+  if (!backendResponse.matched || !backendResponse.extractedFields) {
+    return defaultExtractedData;
+  }
+
+  const fields = backendResponse.extractedFields;
+  
+  return {
+    accountNumber: fields.accountNumber || '-1',
+    amount: fields.amount || '-1',
+    type: fields.via?.toUpperCase() || '-1',
+    vendor: fields.from || fields.to || '-1',
+    date: fields.date || '-1',
+    time: fields.time || '-1',
+    transactionId: fields.referenceNumber || '-1',
+    bankName: fields.bankName || '-1',
+    availableBalance: fields.availableBalance || '-1',
+  };
+};
+
 /**
  * CheckerDashboard - Regex approval page for CHECKER role
  * Flow: Load pending regex → Test it → Approve/Reject
@@ -23,14 +44,15 @@ const CheckerDashboard = () => {
   const [loadedTemplate, setLoadedTemplate] = useState(null);
   const [hasTestedRegex, setHasTestedRegex] = useState(false);
   const [activeTab, setActiveTab] = useState('approval');
+  const [isTesting, setIsTesting] = useState(false);
   
-  const { parseMessage } = useParserStore();
   const { 
     pendingTemplates,
     isLoading, 
     fetchPendingTemplates, 
     approveTemplate, 
     rejectTemplate,
+    testRegex,
   } = useCheckerStore();
 
   // Fetch pending templates from backend on mount
@@ -41,12 +63,27 @@ const CheckerDashboard = () => {
     });
   }, [fetchPendingTemplates]);
 
-  const handleTestRegex = () => {
-    if (testMessage.trim()) {
-      const result = parseMessage(testMessage, regexPattern || undefined);
-      setExtractedData(result);
+  const handleTestRegex = async () => {
+    if (!testMessage.trim()) return;
+    
+    setIsTesting(true);
+    try {
+      const result = await testRegex(regexPattern, testMessage);
+      const mappedData = mapExtractedData(result);
+      setExtractedData(mappedData);
       setHasTestedRegex(true);
-      toast.success('Regex tested successfully');
+      
+      if (result.matched) {
+        toast.success('Regex matched successfully!');
+      } else {
+        toast.warning('Regex did not match the message');
+      }
+    } catch (error) {
+      console.error('Test regex error:', error);
+      toast.error('Failed to test regex');
+      setExtractedData(defaultExtractedData);
+    } finally {
+      setIsTesting(false);
     }
   };
 
@@ -233,12 +270,16 @@ const CheckerDashboard = () => {
                     
                     <Button 
                       onClick={handleTestRegex} 
-                      disabled={!testMessage.trim()}
+                      disabled={!testMessage.trim() || isTesting}
                       className="w-full"
                       size="lg"
                     >
-                      <Play className="h-4 w-4 mr-2" />
-                      Test Regex
+                      {isTesting ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Play className="h-4 w-4 mr-2" />
+                      )}
+                      {isTesting ? 'Testing...' : 'Test Regex'}
                     </Button>
                   </CardContent>
                 </Card>

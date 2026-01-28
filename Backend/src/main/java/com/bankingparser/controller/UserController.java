@@ -2,11 +2,14 @@ package com.bankingparser.controller;
 
 import com.bankingparser.dto.AddToHistoryRequest;
 import com.bankingparser.dto.PatternMatchResult;
+import com.bankingparser.dto.RegexMatchRequest;
+import com.bankingparser.dto.RegexMatchResponse;
 import com.bankingparser.model.Msg;
 import com.bankingparser.model.UserMsgRelation;
 import com.bankingparser.service.MsgService;
 import com.bankingparser.security.JwtUtil;
 import com.bankingparser.service.PatternService;
+import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -16,7 +19,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/user")
-@CrossOrigin(origins = "*")
+@CrossOrigin(origins = "http://localhost:8081")
 public class UserController {
 
     @Autowired
@@ -121,6 +124,21 @@ public class UserController {
         }
 
         PatternMatchResult result = patternService.matchPattern(inputString);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * DIRECT REGEX MATCHING - Give a pattern and string, check if they match
+     * Endpoint: POST /user/matchRegex
+     *
+     * Body: {
+     *   "pattern": ".*credited.*Rs\\.\\s*(\\d+).*",
+     *   "inputString": "Your account has been credited with Rs. 5000"
+     * }
+     */
+    @PostMapping("/matchRegex")
+    public ResponseEntity<RegexMatchResponse> matchRegex(@Valid @RequestBody RegexMatchRequest request) {
+        RegexMatchResponse result = patternService.matchRegex(request);
         return ResponseEntity.ok(result);
     }
 }

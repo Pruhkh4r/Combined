@@ -28,6 +28,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         
         final String authorizationHeader = request.getHeader("Authorization");
+        
+        logger.info("Processing request: " + request.getMethod() + " " + request.getRequestURI());
+        logger.info("Authorization header present: " + (authorizationHeader != null));
 
         String username = null;
         String jwt = null;
@@ -37,21 +40,34 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             jwt = authorizationHeader.substring(7);
             try {
                 username = jwtUtil.extractUsername(jwt);
+                logger.info("Extracted username from JWT: " + username);
             } catch (Exception e) {
                 logger.error("Error extracting username from JWT: " + e.getMessage());
             }
+        } else {
+            logger.warn("No valid Authorization header found");
         }
 
         // Validate token and set authentication
         if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-            UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+            try {
+                UserDetails userDetails = this.userDetailsService.loadUserByUsername(username);
+                logger.info("Loaded user details for: " + username + ", authorities: " + userDetails.getAuthorities());
 
-            if (jwtUtil.validateToken(jwt, userDetails)) {
-                UsernamePasswordAuthenticationToken authenticationToken = 
-                    new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
-                authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                if (jwtUtil.validateToken(jwt, userDetails)) {
+                    UsernamePasswordAuthenticationToken authenticationToken = 
+                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                    authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                    SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                    logger.info("Authentication set successfully for user: " + username);
+                } else {
+                    logger.warn("Token validation failed for user: " + username);
+                }
+            } catch (Exception e) {
+                logger.error("Error during authentication: " + e.getMessage());
             }
+        } else if (username == null) {
+            logger.warn("Username is null, skipping authentication");
         }
         
         filterChain.doFilter(request, response);

@@ -1,5 +1,8 @@
 package com.bankingparser.dto;
 
+import java.util.HashMap;
+import java.util.Map;
+
 public class PatternMatchResult {
 
     private boolean matched;
@@ -7,8 +10,10 @@ public class PatternMatchResult {
     private String regexPattern;
     private String inputString;
     private String message;
+    private Map<String, String> extractedFields;
 
     public PatternMatchResult() {
+        this.extractedFields = new HashMap<>();
     }
 
     public PatternMatchResult(boolean matched, Integer patternId, String regexPattern, String inputString) {
@@ -17,6 +22,7 @@ public class PatternMatchResult {
         this.regexPattern = regexPattern;
         this.inputString = inputString;
         this.message = matched ? "Pattern matched successfully" : "No pattern matched";
+        this.extractedFields = new HashMap<>();
     }
 
     public PatternMatchResult(boolean matched, Integer patternId, String regexPattern, String inputString, String message) {
@@ -25,6 +31,16 @@ public class PatternMatchResult {
         this.regexPattern = regexPattern;
         this.inputString = inputString;
         this.message = message;
+        this.extractedFields = new HashMap<>();
+    }
+
+    public PatternMatchResult(boolean matched, Integer patternId, String regexPattern, String inputString, String message, Map<String, String> extractedFields) {
+        this.matched = matched;
+        this.patternId = patternId;
+        this.regexPattern = regexPattern;
+        this.inputString = inputString;
+        this.message = message;
+        this.extractedFields = extractedFields != null ? extractedFields : new HashMap<>();
     }
 
     public boolean isMatched() {
@@ -65,5 +81,13 @@ public class PatternMatchResult {
 
     public void setMessage(String message) {
         this.message = message;
+    }
+
+    public Map<String, String> getExtractedFields() {
+        return extractedFields;
+    }
+
+    public void setExtractedFields(Map<String, String> extractedFields) {
+        this.extractedFields = extractedFields;
     }
 }

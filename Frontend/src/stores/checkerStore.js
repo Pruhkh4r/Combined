@@ -105,6 +105,42 @@ export const useCheckerStore = create((set, get) => ({
   },
 
   // ============================================
+  // REGEX TESTING (for Checker)
+  // ============================================
+
+  /**
+   * Test a regex pattern against an input string
+   * Endpoint: POST /checker/matchRegex
+   */
+  testRegex: async (pattern, inputString) => {
+    set({ isLoading: true, error: null });
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/checker/matchRegex`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({
+          pattern: pattern,
+          inputString: inputString,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({ message: 'Failed to test regex' }));
+        throw new Error(error.message || `HTTP error! status: ${response.status}`);
+      }
+
+      const result = await response.json();
+      set({ isLoading: false });
+      return result;
+    } catch (error) {
+      console.error('Test regex error:', error);
+      set({ error: error.message, isLoading: false });
+      throw error;
+    }
+  },
+
+  // ============================================
   // APPROVAL OPERATIONS
   // ============================================
 

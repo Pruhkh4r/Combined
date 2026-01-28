@@ -17,6 +17,10 @@ const API_BASE_URL = 'http://localhost:8080';
 // Helper function to get auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('auth-token');
+  console.log('Auth token present:', !!token);
+  if (!token) {
+    console.warn('No auth token found in localStorage');
+  }
   return {
     'Content-Type': 'application/json',
     ...(token && { 'Authorization': `Bearer ${token}` }),
@@ -24,23 +28,29 @@ const getAuthHeaders = () => {
 };
 
 // Helper function to map backend response to frontend data structure
+// Handles both RegexMatchResponse and PatternMatchResult formats
 const mapExtractedData = (backendResponse) => {
-  if (!backendResponse.matched || !backendResponse.extractedFields) {
+  if (!backendResponse.matched) {
     return defaultExtractedData;
   }
 
-  const fields = backendResponse.extractedFields;
+  // Get extracted fields from either response type
+  const fields = backendResponse.extractedFields || {};
+  
+  // If no fields were extracted, return defaults
+  if (Object.keys(fields).length === 0) {
+    return defaultExtractedData;
+  }
   
   return {
     accountNumber: fields.accountNumber || '-1',
     amount: fields.amount || '-1',
-    type: fields.via?.toUpperCase() || '-1', // via field represents transaction type
-    vendor: fields.to || '-1', // to field represents vendor/payee
+    type: fields.via?.toUpperCase() || fields.transactionType?.toUpperCase() || '-1',
+    vendor: fields.from || fields.to || '-1',
     date: fields.date || '-1',
     time: fields.time || '-1',
-    transactionId: fields.referenceNumber || '-1', // referenceNumber maps to transactionId
+    transactionId: fields.referenceNumber || '-1',
     bankName: fields.bankName || '-1',
-    // Additional fields from backend response
     availableBalance: fields.availableBalance || '-1',
   };
 };
@@ -55,23 +65,58 @@ export const useParserStore = create((set, get) => ({
 
   setRawMessage: (message) => set({ rawMessage: message }),
 
+  /**
+   * Parse a message - two modes:
+   * 1. With pattern: Tests a specific regex pattern (for Maker)
+   * 2. Without pattern: Matches against all approved patterns in DB (for User)
+   */
   parseMessage: async (message, pattern) => {
     set({ isLoading: true, error: null });
     
     try {
-      console.log('Parsing message with pattern:', pattern);
-      const response = await fetch(`${API_BASE_URL}/maker/matchRegex`, {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({
-          pattern: pattern,
-          inputString: message,
-        }),
-      });
+      let response;
+      
+      if (pattern) {
+        // Mode 1: Test with specific pattern (Maker flow)
+        console.log('Testing message with specific pattern:', pattern);
+        response = await fetch(`${API_BASE_URL}/user/matchRegex`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            pattern: pattern,
+            inputString: message,
+          }),
+        });
+      } else {
+        // Mode 2: Match against approved patterns in DB (User flow)
+        console.log('Matching message against approved patterns');
+        response = await fetch(`${API_BASE_URL}/user/matchPattern`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({
+            inputString: message,
+          }),
+        });
+      }
 
       if (!response.ok) { 
-        const error = await response.json().catch(() => ({ message: 'An error occurred' }));
-        throw new Error(error.message || `HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Response status:', response.status);
+        console.error('Response body:', errorText);
+        
+        let errorMessage;
+        try {
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.message || errorJson.error || `HTTP error! status: ${response.status}`;
+        } catch {
+          errorMessage = errorText || `HTTP error! status: ${response.status}`;
+        }
+        
+        if (response.status === 403) {
+          errorMessage = 'Access denied. Please log in again.';
+        }
+        
+        throw new Error(errorMessage);
       }
 
       const backendResponse = await response.json();

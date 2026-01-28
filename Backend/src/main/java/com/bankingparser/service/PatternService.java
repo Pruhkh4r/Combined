@@ -239,7 +239,7 @@ public class PatternService {
 
     /**
      * Match input string against all APPROVED patterns
-     * Returns the first matching pattern
+     * Returns the first matching pattern with extracted fields
      */
     @Transactional
     public PatternMatchResult matchPattern(String inputString) {
@@ -261,13 +261,16 @@ public class PatternService {
                 Matcher matcher = regex.matcher(inputString);
 
                 if (matcher.find()) {
-                    // Pattern matched!
+                    // Pattern matched! Extract named groups
+                    Map<String, String> extractedFields = extractNamedGroups(matcher, pattern.getRegexPattern());
+                    
                     return new PatternMatchResult(
                             true,
                             pattern.getPatternId(),
                             pattern.getRegexPattern(),
                             inputString,
-                            "Pattern matched successfully"
+                            "Pattern matched successfully",
+                            extractedFields
                     );
                 }
             } catch (PatternSyntaxException e) {
